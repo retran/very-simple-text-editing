@@ -4,13 +4,15 @@ import javafx.application.Application;
 import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
-import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.stage.Stage;
+import org.antlr.v4.runtime.ANTLRInputStream;
+import org.antlr.v4.runtime.Token;
 import org.jetbrains.skija.*;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.util.List;
 
 // lwjgl
 
@@ -23,13 +25,15 @@ import java.io.IOException;
 // right - [10; 12]
 
 public class HelloApplication extends Application {
-    private String text = "yyyHello World!\nyyySecond Line\nyyyThird line";
+    private String text = "save hello world 123";
+    private List<? extends Token> tokens;
 
     @Override
     public void start(Stage stage) throws IOException {
         FXMLLoader fxmlLoader = new FXMLLoader(HelloApplication.class.getResource("hello-view.fxml"));
         Scene scene = new Scene(fxmlLoader.load(), 320, 240);
 
+        runLexer();
         render(scene);
 
         scene.setOnKeyTyped(new EventHandler<KeyEvent>() {
@@ -42,6 +46,8 @@ public class HelloApplication extends Application {
                 else {
                     text += c;
                 }
+
+                runLexer();
                 render(scene);
             }
         });
@@ -53,6 +59,11 @@ public class HelloApplication extends Application {
 
 
         stage.show();
+    }
+
+    private void runLexer() {
+        ourLangLexer lexer = new ourLangLexer(new ANTLRInputStream(text));
+        tokens = lexer.getAllTokens().stream().toList();
     }
 
     private void render(Scene scene) {
@@ -76,6 +87,31 @@ public class HelloApplication extends Application {
 
         var font = new Font(Typeface.makeFromName("Consolas", FontStyle.NORMAL));
         for (int i = 0; i < text.length(); i++) {
+            Token currToken = null;
+            for (var token : tokens) {
+                if (token.getStartIndex() <= i && token.getStopIndex() >= i) {
+                    currToken = token;
+                    break;
+                }
+            }
+
+            if (currToken != null) {
+                switch (currToken.getType()) {
+                    case 1:
+                        paint.setColor(0xAABB0000);
+                        break;
+                    case 2:
+                        paint.setColor(0xBBBBCC00);
+                        break;
+                    case 3:
+                        paint.setColor(0x55551100);
+                        break;
+                    case 4:
+                        paint.setColor(0x88683400);
+                        break;
+                }
+            }
+
             char c = text.charAt(i);
             if (c != '\n') {
                 var textLine = TextLine.make(String.valueOf(c), font);
