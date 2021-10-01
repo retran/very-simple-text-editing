@@ -1,4 +1,12 @@
-grammar ourLang;
+lexer grammar ourLang;
+
+@header {
+    package me.retran.skijaexample.javafxskija;
+}
+
+LOAD
+    : 'LOAD' | 'load'
+    ;
 
 SAVE
     : 'SAVE' | 'save'

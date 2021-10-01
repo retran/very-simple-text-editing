@@ -62,7 +62,8 @@ public class HelloApplication extends Application {
     }
 
     private void runLexer() {
-        ourLangLexer lexer = new ourLangLexer(new ANTLRInputStream(text));
+        me.retran.skijaexample.javafxskija.ourLang lexer =
+                new me.retran.skijaexample.javafxskija.ourLang(new ANTLRInputStream(text));
         tokens = lexer.getAllTokens().stream().toList();
     }
 
