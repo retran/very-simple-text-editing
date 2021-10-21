@@ -3,6 +3,7 @@ package me.retran.skijaexample.javafxskija;
 import javafx.application.Application;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
+import javafx.stage.Screen;
 import javafx.stage.Stage;
 import org.antlr.v4.runtime.ANTLRInputStream;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -11,7 +12,6 @@ import org.antlr.v4.runtime.Token;
 import org.antlr.v4.runtime.tree.ErrorNode;
 import org.antlr.v4.runtime.tree.TerminalNode;
 import org.jetbrains.skija.*;
-import org.jetbrains.skija.shaper.ShapingOptions;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -37,7 +37,116 @@ class ErrorHighlighter {
     }
 }
 
-class AstNode {
+interface IVisitor {
+
+    void visit(LoadStatement loadStatement);
+    void visit(SaveStatement saveStatement);
+    void visit(Statements statements);
+
+    void visit(ErrorStatement errorStatement);
+}
+
+abstract class VisitorBase implements IVisitor {
+    @Override
+    public void visit(Statements statements) {
+        beforeVisit(statements);
+        for (var statement : statements.getStatements()) {
+            statement.accept(this);
+        }
+        afterVisit(statements);
+    }
+
+    @Override
+    public void visit(LoadStatement loadStatement) {
+        beforeVisit(loadStatement);
+        afterVisit(loadStatement);
+    }
+
+    @Override
+    public void visit(SaveStatement saveStatement) {
+        beforeVisit(saveStatement);
+        afterVisit(saveStatement);
+    }
+
+    @Override
+    public void visit(ErrorStatement errorStatement) {
+        beforeVisit(errorStatement);
+        afterVisit(errorStatement);
+    }
+
+    public abstract void afterVisit(ErrorStatement errorStatement);
+    public abstract void beforeVisit(ErrorStatement errorStatement);
+
+    public abstract void beforeVisit(Statements statements);
+    public abstract void afterVisit(Statements statements);
+
+    public abstract void beforeVisit(LoadStatement statements);
+    public abstract void afterVisit(LoadStatement statements);
+
+    public abstract void beforeVisit(SaveStatement statements);
+    public abstract void afterVisit(SaveStatement statements);
+}
+
+class OurAnalyzer extends VisitorBase {
+    private List<ErrorHighlighter> highlighters;
+    private List<LoadStatement> loadStatements = new ArrayList<>();
+
+    public OurAnalyzer(List<ErrorHighlighter> highlighters) {
+
+        this.highlighters = highlighters;
+    }
+
+    @Override
+    public void afterVisit(ErrorStatement errorStatement) {
+        highlighters.add(new ErrorHighlighter(errorStatement.getStart(), errorStatement.getEnd()));
+    }
+
+    @Override
+    public void beforeVisit(ErrorStatement errorStatement) {
+
+    }
+
+    @Override
+    public void beforeVisit(Statements statements) {
+
+    }
+
+    @Override
+    public void afterVisit(Statements statements) {
+        for (var loadStatement : loadStatements) {
+            highlighters.add(new ErrorHighlighter(loadStatement.getStart(), loadStatement.getEnd()));}
+
+    }
+
+    @Override
+    public void beforeVisit(LoadStatement statement) {
+        loadStatements.add(statement);
+    }
+
+    @Override
+    public void afterVisit(LoadStatement statements) {
+
+    }
+
+    @Override
+    public void beforeVisit(SaveStatement statements) {
+
+    }
+
+    @Override
+    public void afterVisit(SaveStatement saveStatement) {
+        var loadStatement = loadStatements.stream().filter(s -> s.getValue().equals(saveStatement.getValue())).findFirst();
+        if (loadStatement.isPresent()) {
+            loadStatements.remove(loadStatement.get());
+        }
+        else
+        {
+            highlighters.add(new ErrorHighlighter(saveStatement.getStart(), saveStatement.getEnd()));
+        }
+    }
+}
+
+abstract class AstNode {
     private int start;
     private int end;
 
@@ -59,9 +168,11 @@ class AstNode {
     public void setEnd(int end) {
         this.end = end;
     }
+
+    public abstract void accept(IVisitor visitor);
 }
 
-class Statement extends AstNode {
+abstract class Statement extends AstNode {
     private String value;
 
     protected Statement() {
@@ -76,13 +187,34 @@ class Statement extends AstNode {
     }
 }
 
+class ErrorStatement extends Statement {
+    protected ErrorStatement() {
+    }
+
+    @Override
+    public void accept(IVisitor visitor) {
+        visitor.visit(this);
+    }
+}
+
+
 class LoadStatement extends Statement {
     protected LoadStatement() {
+    }
+
+    @Override
+    public void accept(IVisitor visitor) {
+        visitor.visit(this);
     }
 }
 
 class SaveStatement extends  Statement {
     protected SaveStatement() {
+    }
+
+    @Override
+    public void accept(IVisitor visitor) {
+        visitor.visit(this);
     }
 }
 
@@ -93,13 +225,18 @@ class Statements extends AstNode {
         this.statements = new ArrayList<>();
     }
 
+    @Override
+    public void accept(IVisitor visitor) {
+        visitor.visit(this);
+    }
+
     public List<Statement> getStatements() {
         return statements;
     }
 }
 
 public class HelloApplication extends Application {
-    private String text = "LOAD qwe; SAVE qwe;";
+    private String text = "LOAD qwe; qwer; SAVE qwe;";
     private List<? extends Token> tokens;
     private List<ErrorHighlighter> highlighters;
     private Statements root;
@@ -128,7 +265,11 @@ public class HelloApplication extends Application {
         stage.setTitle("Hello!");
         stage.setScene(scene);
 
-        makeImageWithSkija();
+
+        Screen screen = Screen.getPrimary();
+        double scaleX = screen.getOutputScaleX();
+        double scaleY = screen.getOutputScaleY();
+        makeImageWithSkija(scaleX, scaleY);
 
 
         stage.show();
@@ -215,7 +356,6 @@ public class HelloApplication extends Application {
 
             @Override
             public void visitErrorNode(ErrorNode errorNode) {
-
             }
 
             @Override
@@ -237,19 +377,27 @@ public class HelloApplication extends Application {
         lexer.reset();
         
         tokens = lexer.getAllTokens().stream().toList();
+
+        var analyser = new OurAnalyzer(highlighters);
+        this.root.accept(analyser);
     }
 
     private void render(Scene scene) {
         var canvas = (javafx.scene.canvas.Canvas) scene.getRoot().lookup("#myCanvas");
         var gc = canvas.getGraphicsContext2D();
         gc.clearRect(0, 0, 320, 240);
-        var data = makeImageWithSkija().encodeToData().getBytes();
+
+        Screen screen = Screen.getPrimary();
+        double scaleX = screen.getOutputScaleX();
+        double scaleY = screen.getOutputScaleY();
+
+        var data = makeImageWithSkija(scaleX, scaleY).encodeToData().getBytes();
         javafx.scene.image.Image img = new javafx.scene.image.Image(new ByteArrayInputStream(data));
-        gc.drawImage(img, 0, 0);
+        gc.drawImage(img, 0, 0, 320, 240);
     }
 
-    private Image makeImageWithSkija() {
-        Surface surface = Surface.makeRasterN32Premul(320, 240);
+    private Image makeImageWithSkija(double scaleX, double scaleY) {
+        Surface surface = Surface.makeRasterN32Premul((int)(320 * scaleX), (int)(240 * scaleY));
         Canvas canvas = surface.getCanvas();
 
         Paint paint = new Paint();
@@ -258,7 +406,7 @@ public class HelloApplication extends Application {
         int x = 30;
         int y = 50;
 
-        var font = new Font(Typeface.makeFromName("Consolas", FontStyle.NORMAL));
+        var font = new Font(Typeface.makeFromName("Consolas", FontStyle.NORMAL), (float) (14 * scaleY));
         for (int i = 0; i < text.length(); i++) {
             Token currToken = null;
             for (var token : tokens) {
